@@ -8,7 +8,7 @@ class SimuladorSenalesApp:
     def __init__(self, root):
         self.root = root
         self.root.title("Simulador de Señales AC/DC y Rectificación")
-        self.root.geometry("1200x700")
+        self.root.geometry("1200x700") 
         
         # --- Variables de control (Parámetros compartidos) ---
         self.frecuencia_var = tk.DoubleVar(value=50.0)
@@ -67,11 +67,54 @@ class SimuladorSenalesApp:
     def crear_slider(self, parent, texto, variable, desde, hasta, resolucion):
         marco = ttk.Frame(parent)
         marco.pack(fill='x', pady=5)
-        ttk.Label(marco, text=texto).pack(side=tk.TOP, anchor='w')
+        
+        # Sub-frame para alinear el texto y la entrada numérica
+        header_frame = ttk.Frame(marco)
+        header_frame.pack(fill='x')
+        
+        ttk.Label(header_frame, text=texto).pack(side=tk.LEFT)
+        
+        # 1. Variable de texto independiente para evitar que el slider pelee con el teclado
+        texto_var = tk.StringVar(value=str(variable.get()))
+        
+        entrada = ttk.Entry(header_frame, textvariable=texto_var, width=8, justify="right")
+        entrada.pack(side=tk.RIGHT)
+        
+        # 2. Función que se llama cuando movemos el slider con el ratón
+        def on_slider_move(val):
+            # Formateamos el valor para que no muestre demasiados decimales
+            texto_var.set(str(round(float(val), 3))) 
+            self.actualizar_grafico()
+
+        # El slider ahora usa on_slider_move como comando
         slider = tk.Scale(marco, from_=desde, to=hasta, variable=variable, 
                           resolution=resolucion, orient=tk.HORIZONTAL, 
-                          command=self.actualizar_grafico)
+                          command=on_slider_move)
         slider.pack(fill='x')
+
+        # 3. Función que se llama cuando el usuario presiona Enter o sale del cuadro de texto
+        def on_text_enter(event=None):
+            try:
+                # Intentamos convertir lo que escribió el usuario a número
+                nuevo_valor = float(texto_var.get())
+                
+                # Limitamos el valor para que no se salga de los límites del slider
+                nuevo_valor = max(desde, min(hasta, nuevo_valor))
+                
+                # Actualizamos el slider y el texto validado
+                variable.set(nuevo_valor)
+                texto_var.set(str(nuevo_valor))
+                
+                # Actualizamos el gráfico
+                self.actualizar_grafico()
+                
+            except ValueError:
+                # Si el usuario escribió letras o algo inválido, restauramos el valor anterior
+                texto_var.set(str(variable.get()))
+
+        # Vinculamos los eventos de teclado y pérdida de foco
+        entrada.bind("<Return>", on_text_enter)
+        entrada.bind("<FocusOut>", on_text_enter)
 
     def crear_checkbox(self, parent, texto, variable):
         cb = ttk.Checkbutton(parent, text=texto, variable=variable, command=self.actualizar_grafico)
@@ -88,6 +131,66 @@ class SimuladorSenalesApp:
         return np.array(suavizada)
 
     def actualizar_grafico(self, event=None):
+        try:
+            # 1. Obtener parámetros actuales
+            f = self.frecuencia_var.get()
+            v_max = self.amplitud_var.get()
+            duracion = self.duracion_var.get()
+            rc = self.rc_var.get()
+
+            # 2. Generar vector de tiempo
+            t = np.linspace(0, duracion, 2000)
+
+            # 3. Calcular señales base compartidas
+            ac = v_max * np.sin(2 * np.pi * f * t)
+            dc = np.full_like(t, v_max)
+            media_onda = np.maximum(ac, 0)
+            onda_completa = np.abs(ac)
+
+            # 4. Limpiar gráfico actual
+            self.ax.clear()
+
+            # 5. Dibujar solo las señales seleccionadas por el usuario
+            hay_graficos = False
+            t_ms = t * 1000  # Convertir a milisegundos para el eje X
+
+            if self.show_ac.get():
+                self.ax.plot(t_ms, ac, label="AC Original", color='#1f77b4', alpha=0.6)
+                hay_graficos = True
+            if self.show_dc.get():
+                self.ax.plot(t_ms, dc, label="DC (Constante)", color='black', linestyle='--')
+                hay_graficos = True
+            if self.show_hw.get():
+                self.ax.plot(t_ms, media_onda, label="Media Onda", color='#ff7f0e', linestyle='-.')
+                hay_graficos = True
+            if self.show_fw.get():
+                self.ax.plot(t_ms, onda_completa, label="Onda Completa", color='#2ca02c', linestyle=':')
+                hay_graficos = True
+            if self.show_hw_cap.get():
+                hw_cap = self.calcular_capacitor(media_onda, t, rc)
+                self.ax.plot(t_ms, hw_cap, label=f"Media Onda + Cap (RC={rc:.3f})", color='#d62728')
+                hay_graficos = True
+            if self.show_fw_cap.get():
+                fw_cap = self.calcular_capacitor(onda_completa, t, rc)
+                self.ax.plot(t_ms, fw_cap, label=f"Onda Completa + Cap (RC={rc:.3f})", color='#9467bd')
+                hay_graficos = True
+
+            # 6. Configurar diseño del gráfico
+            self.ax.set_title("Análisis de Señales Eléctricas y Filtrado")
+            self.ax.set_xlabel("Tiempo (ms)")
+            self.ax.set_ylabel("Voltaje (V)")
+            self.ax.grid(True, linestyle='--', alpha=0.7)
+            self.ax.axhline(0, color='black', linewidth=1)
+
+            if hay_graficos:
+                self.ax.legend(loc="lower left")
+
+            self.fig.tight_layout()
+            self.canvas.draw()
+            
+        except (tk.TclError, AttributeError):
+            # Si ocurre un error porque la ventana se está cerrando, lo ignoramos
+            pass
         # 1. Obtener parámetros actuales
         f = self.frecuencia_var.get()
         v_max = self.amplitud_var.get()
