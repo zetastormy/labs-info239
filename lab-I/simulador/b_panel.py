@@ -1,5 +1,7 @@
 import tkinter as tk
-from tkinter import ttk
+from tkinter import ttk, messagebox  # ¡Importamos messagebox aquí!
+
+from .a_slider import Slider
 
 class PanelControles:
     def __init__(self, parent, callback_actualizar):
@@ -7,6 +9,7 @@ class PanelControles:
         self.callback_actualizar = callback_actualizar
         
         self.paneles_vars = []
+        self.visibilidad_widgets = []
         
         self.frame_botones = ttk.Frame(self.parent)
         self.frame_botones.pack(fill='x', pady=5, padx=5)
@@ -14,19 +17,29 @@ class PanelControles:
         ttk.Button(self.frame_botones, text="➕ Añadir Gráfico", command=self.agregar_grafico).pack(side=tk.LEFT, padx=2, expand=True, fill='x')
         ttk.Button(self.frame_botones, text="➖ Quitar Gráfico", command=self.quitar_grafico).pack(side=tk.LEFT, padx=2, expand=True, fill='x')
         
+        self.frame_visibilidad = ttk.LabelFrame(self.parent, text="Mostrar en Pantalla")
+        self.frame_visibilidad.pack(fill='x', padx=5, pady=(0, 5))
+        
         self.notebook = ttk.Notebook(self.parent)
         self.notebook.pack(fill='both', expand=True, padx=5, pady=5)
         
-        # AHORA: Inicia vacío y actualizamos la vista para asegurar el lienzo en blanco
         self.callback_actualizar()
 
     def agregar_grafico(self):
+        # NUEVO: Límite de 5 gráficos con ventana de error
+        if len(self.paneles_vars) >= 5:
+            messagebox.showerror(
+                title="Error", 
+                message="¿Para que quieres tantos graficos?\nMax 5 Graficos por ahora..."
+            )
+            return
+
         num_grafico = len(self.paneles_vars) + 1
         frame_pestana = ttk.Frame(self.notebook, padding="10")
         self.notebook.add(frame_pestana, text=f"Gráfico {num_grafico}")
         
-        # Variables, incluyendo el estado de animación
         vars_dict = {
+            "mostrar_grafico": tk.BooleanVar(value=True),
             "frecuencia": tk.DoubleVar(value=50.0),
             "amplitud": tk.DoubleVar(value=5.0),
             "duracion": tk.DoubleVar(value=0.1),
@@ -43,9 +56,16 @@ class PanelControles:
         
         self.paneles_vars.append((frame_pestana, vars_dict))
         
-        # Botón de animación individual
+        cb_vis = ttk.Checkbutton(
+            self.frame_visibilidad,
+            text=f"G{num_grafico}",
+            variable=vars_dict["mostrar_grafico"],
+            command=self.callback_actualizar
+        )
+        cb_vis.pack(side=tk.LEFT, padx=5)
+        self.visibilidad_widgets.append(cb_vis)
+
         btn_play = ttk.Button(frame_pestana, text="▶ Play")
-        # Usamos lambda con valores por defecto para que capture las variables de esta iteración específica
         btn_play.config(command=lambda b=btn_play, v=vars_dict: self.toggle_play(b, v))
         btn_play.pack(fill='x', pady=(0, 10))
 
@@ -70,12 +90,10 @@ class PanelControles:
 
     def toggle_play(self, btn, vars_dict):
         if vars_dict["is_playing"].get():
-            # Detener y resetear
             vars_dict["is_playing"].set(False)
             vars_dict["fase_actual"].set(0.0)
             btn.config(text="▶ Play")
         else:
-            # Iniciar animación
             vars_dict["is_playing"].set(True)
             btn.config(text="⏹ Detener")
         self.callback_actualizar()
@@ -85,16 +103,32 @@ class PanelControles:
             frame_pestana, _ = self.paneles_vars.pop()
             self.notebook.forget(frame_pestana)
             frame_pestana.destroy()
+            
+            cb_vis = self.visibilidad_widgets.pop()
+            cb_vis.destroy()
+            
             self.callback_actualizar()
 
     def crear_slider(self, parent, texto, variable, desde, hasta, resolucion):
-        marco = ttk.Frame(parent)
-        marco.pack(fill='x', pady=2)
-        ttk.Label(marco, text=texto).pack(side=tk.TOP, anchor='w')
-        slider = tk.Scale(marco, from_=desde, to=hasta, variable=variable, 
-                          resolution=resolucion, orient=tk.HORIZONTAL, 
-                          command=lambda _: self.callback_actualizar())
-        slider.pack(fill='x')
+        slider_custom = Slider(
+            parent=parent, 
+            label_text=texto, 
+            from_=desde, 
+            to=hasta, 
+            value=variable.get(), 
+            step=resolucion
+        )
+        slider_custom.pack(fill='x', pady=5)
+        
+        def on_slider_change(*args):
+            try:
+                nuevo_valor = slider_custom.get_value()
+                variable.set(nuevo_valor)
+                self.callback_actualizar()
+            except tk.TclError:
+                pass
+
+        slider_custom.value_var.trace_add("write", on_slider_change)
 
     def crear_checkbox(self, parent, texto, variable):
         cb = ttk.Checkbutton(parent, text=texto, variable=variable, command=self.callback_actualizar)
@@ -103,6 +137,7 @@ class PanelControles:
     def obtener_configuraciones(self):
         configs = []
         for _, vars_dict in self.paneles_vars:
-            config = {k: v.get() for k, v in vars_dict.items()}
-            configs.append(config)
+            if vars_dict["mostrar_grafico"].get():
+                config = {k: v.get() for k, v in vars_dict.items()}
+                configs.append(config)
         return configs
