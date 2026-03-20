@@ -8,7 +8,7 @@ class SimuladorSenalesApp:
     def __init__(self, root):
         self.root = root
         self.root.title("Simulador de Señales AC/DC y Rectificación")
-        self.root.geometry("1200x700") 
+        self.root.geometry("1200x700")
         
         # --- Variables de control (Parámetros compartidos) ---
         self.frecuencia_var = tk.DoubleVar(value=50.0)
@@ -24,8 +24,19 @@ class SimuladorSenalesApp:
         self.show_hw_cap = tk.BooleanVar(value=False) # Media onda + Cap
         self.show_fw_cap = tk.BooleanVar(value=False) # Onda completa + Cap
 
+        self.fase_actual = 0.0
+
         self.crear_interfaz()
         self.actualizar_grafico()
+        self.animar_onda()
+
+    def animar_onda(self):
+        # Avanzar el ciclo. Multiplicamos para reducir la velocidad visual
+        f = self.frecuencia_var.get()
+        velocidad_animacion = 0.02
+        self.fase_actual += 2 * np.pi * f * velocidad_animacion * (30 / 1000.0)
+        self.actualizar_grafico(es_animacion=True)
+        self.root.after(30, self.animar_onda)
 
     def crear_interfaz(self):
         # --- Panel Izquierdo: Gráfico ---
@@ -67,54 +78,11 @@ class SimuladorSenalesApp:
     def crear_slider(self, parent, texto, variable, desde, hasta, resolucion):
         marco = ttk.Frame(parent)
         marco.pack(fill='x', pady=5)
-        
-        # Sub-frame para alinear el texto y la entrada numérica
-        header_frame = ttk.Frame(marco)
-        header_frame.pack(fill='x')
-        
-        ttk.Label(header_frame, text=texto).pack(side=tk.LEFT)
-        
-        # 1. Variable de texto independiente para evitar que el slider pelee con el teclado
-        texto_var = tk.StringVar(value=str(variable.get()))
-        
-        entrada = ttk.Entry(header_frame, textvariable=texto_var, width=8, justify="right")
-        entrada.pack(side=tk.RIGHT)
-        
-        # 2. Función que se llama cuando movemos el slider con el ratón
-        def on_slider_move(val):
-            # Formateamos el valor para que no muestre demasiados decimales
-            texto_var.set(str(round(float(val), 3))) 
-            self.actualizar_grafico()
-
-        # El slider ahora usa on_slider_move como comando
+        ttk.Label(marco, text=texto).pack(side=tk.TOP, anchor='w')
         slider = tk.Scale(marco, from_=desde, to=hasta, variable=variable, 
                           resolution=resolucion, orient=tk.HORIZONTAL, 
-                          command=on_slider_move)
+                          command=self.actualizar_grafico)
         slider.pack(fill='x')
-
-        # 3. Función que se llama cuando el usuario presiona Enter o sale del cuadro de texto
-        def on_text_enter(event=None):
-            try:
-                # Intentamos convertir lo que escribió el usuario a número
-                nuevo_valor = float(texto_var.get())
-                
-                # Limitamos el valor para que no se salga de los límites del slider
-                nuevo_valor = max(desde, min(hasta, nuevo_valor))
-                
-                # Actualizamos el slider y el texto validado
-                variable.set(nuevo_valor)
-                texto_var.set(str(nuevo_valor))
-                
-                # Actualizamos el gráfico
-                self.actualizar_grafico()
-                
-            except ValueError:
-                # Si el usuario escribió letras o algo inválido, restauramos el valor anterior
-                texto_var.set(str(variable.get()))
-
-        # Vinculamos los eventos de teclado y pérdida de foco
-        entrada.bind("<Return>", on_text_enter)
-        entrada.bind("<FocusOut>", on_text_enter)
 
     def crear_checkbox(self, parent, texto, variable):
         cb = ttk.Checkbutton(parent, text=texto, variable=variable, command=self.actualizar_grafico)
@@ -130,88 +98,37 @@ class SimuladorSenalesApp:
             suavizada.append(valor)
         return np.array(suavizada)
 
-    def actualizar_grafico(self, event=None):
-        try:
-            # 1. Obtener parámetros actuales
-            f = self.frecuencia_var.get()
-            v_max = self.amplitud_var.get()
-            duracion = self.duracion_var.get()
-            rc = self.rc_var.get()
-
-            # 2. Generar vector de tiempo
-            t = np.linspace(0, duracion, 2000)
-
-            # 3. Calcular señales base compartidas
-            ac = v_max * np.sin(2 * np.pi * f * t)
-            dc = np.full_like(t, v_max)
-            media_onda = np.maximum(ac, 0)
-            onda_completa = np.abs(ac)
-
-            # 4. Limpiar gráfico actual
-            self.ax.clear()
-
-            # 5. Dibujar solo las señales seleccionadas por el usuario
-            hay_graficos = False
-            t_ms = t * 1000  # Convertir a milisegundos para el eje X
-
-            if self.show_ac.get():
-                self.ax.plot(t_ms, ac, label="AC Original", color='#1f77b4', alpha=0.6)
-                hay_graficos = True
-            if self.show_dc.get():
-                self.ax.plot(t_ms, dc, label="DC (Constante)", color='black', linestyle='--')
-                hay_graficos = True
-            if self.show_hw.get():
-                self.ax.plot(t_ms, media_onda, label="Media Onda", color='#ff7f0e', linestyle='-.')
-                hay_graficos = True
-            if self.show_fw.get():
-                self.ax.plot(t_ms, onda_completa, label="Onda Completa", color='#2ca02c', linestyle=':')
-                hay_graficos = True
-            if self.show_hw_cap.get():
-                hw_cap = self.calcular_capacitor(media_onda, t, rc)
-                self.ax.plot(t_ms, hw_cap, label=f"Media Onda + Cap (RC={rc:.3f})", color='#d62728')
-                hay_graficos = True
-            if self.show_fw_cap.get():
-                fw_cap = self.calcular_capacitor(onda_completa, t, rc)
-                self.ax.plot(t_ms, fw_cap, label=f"Onda Completa + Cap (RC={rc:.3f})", color='#9467bd')
-                hay_graficos = True
-
-            # 6. Configurar diseño del gráfico
-            self.ax.set_title("Análisis de Señales Eléctricas y Filtrado")
-            self.ax.set_xlabel("Tiempo (ms)")
-            self.ax.set_ylabel("Voltaje (V)")
-            self.ax.grid(True, linestyle='--', alpha=0.7)
-            self.ax.axhline(0, color='black', linewidth=1)
-
-            if hay_graficos:
-                self.ax.legend(loc="lower left")
-
-            self.fig.tight_layout()
-            self.canvas.draw()
-            
-        except (tk.TclError, AttributeError):
-            # Si ocurre un error porque la ventana se está cerrando, lo ignoramos
-            pass
+    def actualizar_grafico(self, event=None, es_animacion=False):
         # 1. Obtener parámetros actuales
         f = self.frecuencia_var.get()
         v_max = self.amplitud_var.get()
         duracion = self.duracion_var.get()
         rc = self.rc_var.get()
 
-        # 2. Generar vector de tiempo
-        t = np.linspace(0, duracion, 2000)
+        # 2. Generar vector de tiempo incluyendo un pequeño historial 
+        # para que el capacitor no salte de 0V al comienzo de la pantalla cada ciclo.
+        periodo = 1.0 / f
+        puntos_extra = 200
+        t_padding = np.linspace(-periodo, 0, puntos_extra, endpoint=False)
+        t_main = np.linspace(0, duracion, 2000)
+        t_full = np.concatenate([t_padding, t_main])
 
-        # 3. Calcular señales base compartidas
-        ac = v_max * np.sin(2 * np.pi * f * t)
-        dc = np.full_like(t, v_max)
-        media_onda = np.maximum(ac, 0)
-        onda_completa = np.abs(ac)
+        # 3. Calcular señales base compartidas añadiendo la fase
+        ac_full = v_max * np.sin(2 * np.pi * f * t_full + self.fase_actual)
+        media_onda_full = np.maximum(ac_full, 0)
+        onda_completa_full = np.abs(ac_full)
+
+        ac = ac_full[puntos_extra:]
+        dc = np.full_like(t_main, v_max)
+        media_onda = media_onda_full[puntos_extra:]
+        onda_completa = onda_completa_full[puntos_extra:]
 
         # 4. Limpiar gráfico actual
         self.ax.clear()
 
         # 5. Dibujar solo las señales seleccionadas por el usuario
         hay_graficos = False
-        t_ms = t * 1000  # Convertir a milisegundos para el eje X
+        t_ms = t_main * 1000  # Convertir a milisegundos para el eje X
 
         if self.show_ac.get():
             self.ax.plot(t_ms, ac, label="AC Original", color='#1f77b4', alpha=0.6)
@@ -226,26 +143,37 @@ class SimuladorSenalesApp:
             self.ax.plot(t_ms, onda_completa, label="Onda Completa", color='#2ca02c', linestyle=':')
             hay_graficos = True
         if self.show_hw_cap.get():
-            hw_cap = self.calcular_capacitor(media_onda, t, rc)
-            self.ax.plot(t_ms, hw_cap, label=f"Media Onda + Cap (RC={rc:.3f})", color='#d62728')
+            hw_cap_full = self.calcular_capacitor(media_onda_full, t_full, rc)
+            self.ax.plot(t_ms, hw_cap_full[puntos_extra:], label=f"Media Onda + Cap (RC={rc:.3f})", color='#d62728')
             hay_graficos = True
         if self.show_fw_cap.get():
-            fw_cap = self.calcular_capacitor(onda_completa, t, rc)
-            self.ax.plot(t_ms, fw_cap, label=f"Onda Completa + Cap (RC={rc:.3f})", color='#9467bd')
+            fw_cap_full = self.calcular_capacitor(onda_completa_full, t_full, rc)
+            self.ax.plot(t_ms, fw_cap_full[puntos_extra:], label=f"Onda Completa + Cap (RC={rc:.3f})", color='#9467bd')
             hay_graficos = True
 
         # 6. Configurar diseño del gráfico
-        self.ax.set_title("Análisis de Señales Eléctricas y Filtrado")
+        self.ax.set_title("Análisis de Señales Eléctricas Animado en Tiempo Real")
         self.ax.set_xlabel("Tiempo (ms)")
         self.ax.set_ylabel("Voltaje (V)")
         self.ax.grid(True, linestyle='--', alpha=0.7)
         self.ax.axhline(0, color='black', linewidth=1)
 
-        if hay_graficos:
-            self.ax.legend(loc="lower left")
+        # 7. Mantener límites fijos para que el gráfico no salte o vibre
+        self.ax.set_ylim(-26, 26)  # Según el slider de 24 como máximo
+        self.ax.set_xlim(0, duracion * 1000)
 
-        self.fig.tight_layout()
-        self.canvas.draw()
+        if hay_graficos:
+            # Fijarse en un upper right corner para evitar parpadeos con los textos de leyenda
+            self.ax.legend(loc="upper right")
+
+        # Dibujar de nuevo
+        if es_animacion:
+            # La optimización completa de Matplotlib requeriría guardar artistas, pero blitting 
+            # con draw_idle o un clear total a 30fps suele ser suficientemente rápido en tkinters simples.
+            self.canvas.draw_idle()
+        else:
+            self.fig.tight_layout()
+            self.canvas.draw()
 
 if __name__ == "__main__":
     root = tk.Tk()
