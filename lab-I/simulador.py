@@ -78,11 +78,55 @@ class SimuladorSenalesApp:
     def crear_slider(self, parent, texto, variable, desde, hasta, resolucion):
         marco = ttk.Frame(parent)
         marco.pack(fill='x', pady=5)
-        ttk.Label(marco, text=texto).pack(side=tk.TOP, anchor='w')
+        
+        # Sub-frame para alinear el texto y la entrada numérica
+        header_frame = ttk.Frame(marco)
+        header_frame.pack(fill='x')
+        
+        ttk.Label(header_frame, text=texto).pack(side=tk.LEFT)
+        
+        # 1. Variable de texto independiente para evitar que el slider pelee con el teclado
+        texto_var = tk.StringVar(value=str(variable.get()))
+        
+        entrada = ttk.Entry(header_frame, textvariable=texto_var, width=8, justify="right")
+        entrada.pack(side=tk.RIGHT)
+        
+        # 2. Función que se llama cuando movemos el slider con el ratón
+        def on_slider_move(val):
+            # Formateamos el valor para que no muestre demasiados decimales
+            texto_var.set(str(round(float(val), 3))) 
+            self.actualizar_grafico()
+
+        # El slider ahora usa on_slider_move como comando
         slider = tk.Scale(marco, from_=desde, to=hasta, variable=variable, 
                           resolution=resolucion, orient=tk.HORIZONTAL, 
-                          command=self.actualizar_grafico)
+                          command=on_slider_move)
         slider.pack(fill='x')
+
+        # 3. Función que se llama cuando el usuario presiona Enter o sale del cuadro de texto
+        def on_text_enter(event=None):
+            try:
+                # Intentamos convertir lo que escribió el usuario a número
+                nuevo_valor = float(texto_var.get())
+                
+                # Limitamos el valor para que no se salga de los límites del slider
+                nuevo_valor = max(desde, min(hasta, nuevo_valor))
+                
+                # Actualizamos el slider y el texto validado
+                variable.set(nuevo_valor)
+                texto_var.set(str(nuevo_valor))
+                
+                # Actualizamos el gráfico
+                self.actualizar_grafico()
+                
+            except ValueError:
+                # Si el usuario escribió letras o algo inválido, restauramos el valor anterior
+                texto_var.set(str(variable.get()))
+
+        # Vinculamos los eventos de teclado y pérdida de foco
+        entrada.bind("<Return>", on_text_enter)
+        entrada.bind("<FocusOut>", on_text_enter)
+
 
     def crear_checkbox(self, parent, texto, variable):
         cb = ttk.Checkbutton(parent, text=texto, variable=variable, command=self.actualizar_grafico)
