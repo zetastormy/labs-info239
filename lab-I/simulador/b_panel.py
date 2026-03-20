@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import ttk, messagebox  # ¡Importamos messagebox aquí!
+from tkinter import ttk, messagebox
 
 from .a_slider import Slider
 
@@ -26,7 +26,6 @@ class PanelControles:
         self.callback_actualizar()
 
     def agregar_grafico(self):
-        # NUEVO: Límite de 5 gráficos con ventana de error
         if len(self.paneles_vars) >= 5:
             messagebox.showerror(
                 title="Error", 
@@ -50,6 +49,7 @@ class PanelControles:
             "show_fw": tk.BooleanVar(value=False),
             "show_hw_cap": tk.BooleanVar(value=False),
             "show_fw_cap": tk.BooleanVar(value=False),
+            "show_periodo": tk.BooleanVar(value=True),
             "is_playing": tk.BooleanVar(value=False),
             "fase_actual": tk.DoubleVar(value=0.0)
         }
@@ -84,6 +84,9 @@ class PanelControles:
         self.crear_checkbox(frame_pestana, "Media Onda + Capacitor", vars_dict["show_hw_cap"])
         self.crear_checkbox(frame_pestana, "Rectificación Onda Completa", vars_dict["show_fw"])
         self.crear_checkbox(frame_pestana, "Onda Completa + Capacitor", vars_dict["show_fw_cap"])
+
+        ttk.Separator(frame_pestana, orient='horizontal').pack(fill='x', pady=5)
+        self.crear_checkbox(frame_pestana, "Línea Referencial de Período", vars_dict["show_periodo"])
         
         self.notebook.select(frame_pestana)
         self.callback_actualizar()
